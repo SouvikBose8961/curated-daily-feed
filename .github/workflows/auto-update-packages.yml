@@ -2,7 +2,7 @@ name: Auto Update NPM Packages (Backend & Frontend)
 
 on:
   schedule:
-    - cron: "0 * * * *"  # Runs every hour
+    - cron: "0 0 * * 0"  #  Runs at 00:00 UTC every Sunday
   workflow_dispatch:      # Allow manual trigger
 
 permissions:
@@ -17,7 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Use Node.js 22
+      - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -25,9 +25,9 @@ jobs:
       - name: Install npm-check-updates
         run: npm install -g npm-check-updates
 
-      - name: Define branch name
+      - name: Define unique branch name
         id: vars
-        run: echo "branch_name=auto-upgrade-$(date +'%Y%m%d%H%M')" >> $GITHUB_OUTPUT
+        run: echo "branch_name=auto-upgrade-${GITHUB_RUN_ID}" >> $GITHUB_OUTPUT
 
       - name: Check and update backend dependencies
         id: backend
@@ -76,10 +76,23 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Checkout a unique branch per run
           git checkout -b ${{ steps.vars.outputs.branch_name }}
+
+          # Add updated package files
           git add backend/package*.json frontend/package*.json
+
+          # If no real changes, add a dummy file to force a commit
+          if [ -z "$(git diff --cached --name-only)" ]; then
+            echo "Last check: $(date)" > .last-update-check.txt
+            git add .last-update-check.txt
+          fi
+
           git commit -m "🔄 Auto-update NPM dependencies in backend & frontend [skip ci]" || echo "No changes to commit"
-          git push origin HEAD
+
+          # Push branch to origin
+          git push -u origin HEAD
 
       - name: Create Pull Request
         if: ${{ steps.backend.outputs.backend_update_count != '0' || steps.frontend.outputs.frontend_update_count != '0' }}
