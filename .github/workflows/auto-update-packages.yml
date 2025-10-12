@@ -1,8 +1,8 @@
-name: Auto Update NPM Packages
+name: Auto Update NPM Packages (Backend & Frontend)
 
 on:
   schedule:
-    - cron: "0 * * * *"  # Runs daily at 5 AM UTC
+    - cron: "0 * * * *"  # Runs every hour
   workflow_dispatch:      # Allow manual trigger
 
 jobs:
@@ -21,33 +21,57 @@ jobs:
       - name: Install npm-check-updates
         run: npm install -g npm-check-updates
 
-      - name: Check for dependency updates
-        id: check
+      - name: Check and update backend dependencies
+        id: backend
         run: |
+          cd backend
           ncu -u
           npm install
-          echo "update_count=$(git status --porcelain | wc -l)" >> $GITHUB_OUTPUT
+          echo "backend_update_count=$(git status --porcelain | wc -l)" >> $GITHUB_OUTPUT
+          cd ..
 
-      - name: Run tests
-        if: steps.check.outputs.update_count != '0'
-        run: npm test
+      - name: Check and update frontend dependencies
+        id: frontend
+        run: |
+          cd frontend
+          ncu -u
+          npm install
+          echo "frontend_update_count=$(git status --porcelain | wc -l)" >> $GITHUB_OUTPUT
+          cd ..
+
+      - name: Run backend tests
+        if: steps.backend.outputs.backend_update_count != '0'
+        run: |
+          cd backend
+          npm test
+          cd ..
+
+      - name: Run frontend tests
+        if: steps.frontend.outputs.frontend_update_count != '0'
+        run: |
+          cd frontend
+          npm test
+          cd ..
 
       - name: Commit and push changes
-        if: steps.check.outputs.update_count != '0'
+        if: ${{ steps.backend.outputs.backend_update_count != '0' || steps.frontend.outputs.frontend_update_count != '0' }}
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b auto-upgrade-$(date +%Y%m%d)
-          git add package*.json
-          git commit -m "🔄 Auto-update NPM dependencies [skip ci]"
+          git checkout -b auto-upgrade-$(date +%Y%m%d%H%M)
+          git add backend/package*.json frontend/package*.json
+          git commit -m "🔄 Auto-update NPM dependencies in backend & frontend [skip ci]"
           git push origin HEAD
 
       - name: Create Pull Request
-        if: steps.check.outputs.update_count != '0'
+        if: ${{ steps.backend.outputs.backend_update_count != '0' || steps.frontend.outputs.frontend_update_count != '0' }}
         uses: peter-evans/create-pull-request@v6
         with:
-          title: "🤖 Auto Dependency Update - $(date +'%Y-%m-%d')"
-          body: "This PR updates NPM dependencies to their latest versions."
-          branch: ${{ github.ref_name }}
+          title: "🤖 Auto Dependency Update - $(date +'%Y-%m-%d %H:%M')"
+          body: |
+            This PR updates NPM dependencies in both **backend** and **frontend** folders.
+            - Backend: ${{ steps.backend.outputs.backend_update_count }} changes
+            - Frontend: ${{ steps.frontend.outputs.frontend_update_count }} changes
+          branch: auto-upgrade-${{ github.run_id }}
           base: main
           labels: auto-update
