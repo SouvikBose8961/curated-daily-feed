@@ -1,0 +1,53 @@
+name: Auto Update NPM Packages
+
+on:
+  schedule:
+    - cron: "0 * * * *"  # Runs daily at 5 AM UTC
+  workflow_dispatch:      # Allow manual trigger
+
+jobs:
+  update-dependencies:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install npm-check-updates
+        run: npm install -g npm-check-updates
+
+      - name: Check for dependency updates
+        id: check
+        run: |
+          ncu -u
+          npm install
+          echo "update_count=$(git status --porcelain | wc -l)" >> $GITHUB_OUTPUT
+
+      - name: Run tests
+        if: steps.check.outputs.update_count != '0'
+        run: npm test
+
+      - name: Commit and push changes
+        if: steps.check.outputs.update_count != '0'
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b auto-upgrade-$(date +%Y%m%d)
+          git add package*.json
+          git commit -m "🔄 Auto-update NPM dependencies [skip ci]"
+          git push origin HEAD
+
+      - name: Create Pull Request
+        if: steps.check.outputs.update_count != '0'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          title: "🤖 Auto Dependency Update - $(date +'%Y-%m-%d')"
+          body: "This PR updates NPM dependencies to their latest versions."
+          branch: ${{ github.ref_name }}
+          base: main
+          labels: auto-update
