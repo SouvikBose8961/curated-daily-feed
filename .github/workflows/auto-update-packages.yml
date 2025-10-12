@@ -85,5 +85,5 @@ jobs:
             - Backend: ${{ steps.backend.outputs.backend_update_count }} changes
             - Frontend: ${{ steps.frontend.outputs.frontend_update_count }} changes
           branch: auto-upgrade-${{ github.run_id }}
-          base: main
+          base: Master
           labels: auto-update
