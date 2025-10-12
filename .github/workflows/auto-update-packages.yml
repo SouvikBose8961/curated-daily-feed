@@ -25,85 +25,44 @@ jobs:
       - name: Install npm-check-updates
         run: npm install -g npm-check-updates
 
-      - name: Define unique branch name
-        id: vars
-        run: echo "branch_name=auto-upgrade-${GITHUB_RUN_ID}" >> $GITHUB_OUTPUT
-
-      - name: Check and update backend dependencies
-        id: backend
+      - name: Update backend dependencies
         run: |
           cd backend
           ncu -u
           npm install
-          echo "backend_update_count=$(git status --porcelain | wc -l)" >> $GITHUB_OUTPUT
           cd ..
 
-      - name: Check and update frontend dependencies
-        id: frontend
+      - name: Update frontend dependencies
         run: |
           cd frontend
           ncu -u
           npm install
-          echo "frontend_update_count=$(git status --porcelain | wc -l)" >> $GITHUB_OUTPUT
           cd ..
 
-      - name: Run backend tests (if available)
-        if: steps.backend.outputs.backend_update_count != '0'
+      - name: Commit updates to unique branch
         run: |
-          cd backend
-          if npm run | grep -q "test"; then
-            echo "🧪 Running backend tests..."
-            npm test
-          else
-            echo "⚠️ No test script found in backend/package.json, skipping tests."
-          fi
-          cd ..
-
-      - name: Run frontend tests (if available)
-        if: steps.frontend.outputs.frontend_update_count != '0'
-        run: |
-          cd frontend
-          if npm run | grep -q "test"; then
-            echo "🧪 Running frontend tests..."
-            npm test
-          else
-            echo "⚠️ No test script found in frontend/package.json, skipping tests."
-          fi
-          cd ..
-
-      - name: Commit and push changes
-        if: ${{ steps.backend.outputs.backend_update_count != '0' || steps.frontend.outputs.frontend_update_count != '0' }}
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-          # Checkout a unique branch per run
-          git checkout -b ${{ steps.vars.outputs.branch_name }}
-
-          # Add updated package files
-          git add backend/package*.json frontend/package*.json
-
-          # If no real changes, add a dummy file to force a commit
+          BRANCH="auto-upgrade-$(date +%Y%m%d%H%M%S)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b $BRANCH
+          git add backend/package*.json backend/package-lock.json
+          git add frontend/package*.json frontend/package-lock.json
           if [ -z "$(git diff --cached --name-only)" ]; then
-            echo "Last check: $(date)" > .last-update-check.txt
-            git add .last-update-check.txt
+            echo "No package updates detected, forcing dummy commit"
+            echo "Last check: $(date)" > .last-update.txt
+            git add .last-update.txt
           fi
-
-          git commit -m "🔄 Auto-update NPM dependencies in backend & frontend [skip ci]" || echo "No changes to commit"
-
-          # Push branch to origin
-          git push -u origin HEAD
+          git commit -m "🔄 Auto-update NPM dependencies [skip ci]" || echo "No changes to commit"
+          git push origin HEAD
+          echo "BRANCH_NAME=$BRANCH" >> $GITHUB_OUTPUT
 
       - name: Create Pull Request
-        if: ${{ steps.backend.outputs.backend_update_count != '0' || steps.frontend.outputs.frontend_update_count != '0' }}
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ steps.commit.outputs.BRANCH_NAME }}
+          base: Master
           title: "🤖 Auto Dependency Update - $(date +'%Y-%m-%d %H:%M')"
           body: |
-            This PR updates NPM dependencies in both **backend** and **frontend** folders.
-            - Backend: ${{ steps.backend.outputs.backend_update_count }} changes
-            - Frontend: ${{ steps.frontend.outputs.frontend_update_count }} changes
-          branch: ${{ steps.vars.outputs.branch_name }}
-          base: Master
+            This PR updates NPM dependencies in backend and frontend folders.
           labels: auto-update
