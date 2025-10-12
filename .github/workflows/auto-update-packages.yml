@@ -39,18 +39,28 @@ jobs:
           echo "frontend_update_count=$(git status --porcelain | wc -l)" >> $GITHUB_OUTPUT
           cd ..
 
-      - name: Run backend tests
+      - name: Run backend tests (if available)
         if: steps.backend.outputs.backend_update_count != '0'
         run: |
           cd backend
-          npm test
+          if npm run | grep -q "test"; then
+            echo "🧪 Running backend tests..."
+            npm test
+          else
+            echo "⚠️ No test script found in backend/package.json, skipping tests."
+          fi
           cd ..
 
-      - name: Run frontend tests
+      - name: Run frontend tests (if available)
         if: steps.frontend.outputs.frontend_update_count != '0'
         run: |
           cd frontend
-          npm test
+          if npm run | grep -q "test"; then
+            echo "🧪 Running frontend tests..."
+            npm test
+          else
+            echo "⚠️ No test script found in frontend/package.json, skipping tests."
+          fi
           cd ..
 
       - name: Commit and push changes
